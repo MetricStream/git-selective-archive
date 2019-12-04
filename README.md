@@ -35,7 +35,7 @@ current directory.  In most cases this should be the toplevel or the work tree
 
 `git-selective-archive` understands the following parameters:
 
- - `--tag`, `-t`: the tag identifing the tree which forms the base of the archive
+ - `--tag`, `-t`: the tag identifying the tree which forms the base of the archive
  - `--format`, `-f`: passed on to `git-archive` to specify the archive format
  - `--config`, `-c`: the name of the configuration file
  - `--repo`, `-r`: the directory of the work tree
