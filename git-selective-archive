@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+
+"""This program creates one or more subsets of repository snapshots.  The actual
+work is done using `git archive`.  However, it does only archive a subset of the
+repository.  Every snapshot is described by a configuration of git-ignore
+patterns which are converted into gitattributes files to control git-archive.
+Only files which match the combined patterns will be included in the archive.
+
+Examples:
+
+[project1]
+*.java
+!foo.java
+
+will be converted to
+
+* export-ignore
+*.java -export-ignore
+foo.java export-ignore
+
+git-archive will then read this file and archive all Java files besides foo.java.
+"""
+
+import argparse
+import atexit
+import os
+import tarfile
+import zipfile
+from configparser import ConfigParser
+from git import Repo
+from tempfile import NamedTemporaryFile
+
+# .gitselectivearchive is the default name for the configuration
+config = '.gitselectivearchive'
+
+# .gitattributes is the name of the file git-archive uses to control what is archived
+attributes = '.gitattributes'
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-t', '--tag', required=True,
+                    help='tag to archive from, a required parameter')
+parser.add_argument('-r', '--repo', default='.',
+                    help='path to git worktree, defaults to current directory')
+parser.add_argument('-f', '--format', default='zip',
+                    help='archive format, defaults to zip')
+parser.add_argument('-c', '--config', type=argparse.FileType('r'), default=config,
+                    help=f'configuration file, default is {config} or use - for stdin')
+parser.add_argument('-v', '--verbose', action='store_true',
+                    help='print debug output')
+parser.add_argument('-n', '--dry-run', dest='dryrun', action='store_true',
+                    help="don't create archives, just list what they would contain")
+args = parser.parse_args()
+
+def trace(msg):
+    if args.verbose:
+        print(msg)
+
+def restore(backup, dest):
+    trace(f'Restoring {dest} from {backup}')
+    os.rename(backup, dest)
+
+def remove(dest):
+    trace(f'Removing {dest}')
+    os.remove(dest)
+
+try:
+    os.chdir(args.repo)
+except:
+    print(f'Cannot change to directory {args.repo}')
+
+try:
+    repo = Repo('.')
+except:
+    print(f'No git repo at {args.repo}')
+    exit(1)
+
+try:
+    tag = repo.tags[args.tag]
+except:
+    print(f'The git repository at {os.getcwd()} has no tag named {args.tag}')
+    exit(1)
+
+try:
+    config = ConfigParser(allow_no_value=True)
+    config.read_file(args.config)
+except:
+    print('Could not parse the configuration file {args.config}')
+    exit(1)
+
+# git-archive can only be configured using `export-ignore` attributes.  We thus
+# have to move an existing .gitattributes file away so that we do not loose it.
+# At the end, we either restore .gitattributes or remove it again
+if os.path.exists(attributes):
+    backup = NamedTemporaryFile(dir='.').name
+    trace(f'Moving existing {attributes} to {backup}')
+    os.rename(attributes, backup)
+    atexit.register(restore, backup, attributes)
+else:
+    atexit.register(remove, attributes)
+
+for section in config.sections():
+    trace(f'Processing configuration for {section}')
+
+    with open(attributes, 'w') as attr:
+        # first line is "ignore everything" so that only files explicitly
+        # configured will be archived
+        attr.write('* export-ignore\n')
+        for line in config[section]:
+            if line.startswith('!'):
+                attr.write(f'{line[1:]} export-ignore\n')
+            else:
+                attr.write(f'{line} -export-ignore\n')
+
+    # For dryruns we use temporary files so that we not overwrite existing archives
+    if args.dryrun:
+        archive = NamedTemporaryFile(dir='.').name
+        atexit.register(remove, archive)
+    else:
+        archive = f'{section}.{args.format}'
+
+    trace(f'Writing {archive}')
+    with open(archive, 'wb') as arch:
+        # we must pass --worktree-attributes here because otherwise git-archive
+        # will use the .gitattributes file identified by the tag.  And we must
+        # use the weird kwargs syntax because of the - in the --worktree-attributes
+        repo.archive(arch, **{'worktree-attributes': True, 'format': args.format})
+
+    if args.dryrun or args.verbose:
+        print(f'Content of {section} archive:')
+        if tarfile.is_tarfile(archive):
+            with tarfile.open(archive) as tar:
+                tar.list()
+        elif zipfile.is_zipfile(archive):
+            with zipfile.ZipFile(archive) as zip:
+                zip.printdir()
+        else:
+            print(f'Cannot list content of {section} archive')
+        print('---------')
+
+
+__author__ = 'Norbert Kiesel <nkiesel@metricstream.com>'
+__copyright__ = 'Copyright © 2019 MetricStream, Inc.'
+__license__ = 'Apache 2.0'
+__version__ = '0.1.0'
