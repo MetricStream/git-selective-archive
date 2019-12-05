@@ -42,8 +42,8 @@ parser.add_argument('-t', '--tag', required=True,
                     help='tag to archive from, a required parameter')
 parser.add_argument('-r', '--repo', default='.',
                     help='path to git worktree, defaults to current directory')
-parser.add_argument('-f', '--format', default='zip',
-                    help='archive format, defaults to zip')
+parser.add_argument('-f', '--format', default='tar.xz',
+                    help='archive format, defaults to tar.xz')
 parser.add_argument('-c', '--config', type=argparse.FileType('r'), default=config,
                     help=f'configuration file, default is {config} or use - for stdin')
 parser.add_argument('-v', '--verbose', action='store_true',
@@ -99,14 +99,14 @@ if os.path.exists(attributes):
 else:
     atexit.register(remove, attributes)
 
-for section in config.sections():
-    trace(f'Processing configuration for {section}')
+for partner in config.sections():
+    trace(f'Processing configuration for {partner}')
 
     with open(attributes, 'w') as attr:
         # first line is "ignore everything" so that only files explicitly
         # configured will be archived
         attr.write('* export-ignore\n')
-        for line in config[section]:
+        for line in config[partner]:
             if line.startswith('!'):
                 attr.write(f'{line[1:]} export-ignore\n')
             else:
@@ -117,7 +117,7 @@ for section in config.sections():
         archive = NamedTemporaryFile(dir='.').name
         atexit.register(remove, archive)
     else:
-        archive = f'{section}.{args.format}'
+        archive = f'{partner}_{args.tag}.{args.format}'
 
     trace(f'Writing {archive}')
     with open(archive, 'wb') as arch:
@@ -127,7 +127,7 @@ for section in config.sections():
         repo.archive(arch, **{'worktree-attributes': True, 'format': args.format})
 
     if args.dryrun or args.verbose:
-        print(f'Content of {section} archive:')
+        print(f'Content of {partner} archive:')
         if tarfile.is_tarfile(archive):
             with tarfile.open(archive) as tar:
                 tar.list()
@@ -135,7 +135,7 @@ for section in config.sections():
             with zipfile.ZipFile(archive) as zip:
                 zip.printdir()
         else:
-            print(f'Cannot list content of {section} archive')
+            print(f'Cannot list content of {partner} archive')
         print('---------')
 
 
