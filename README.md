@@ -24,8 +24,9 @@ src/
 !src/internal
 ```
 
-`git selective-archive --tag release1` will create 2 files: `partner1.zip` and
-`partner2.zip` with the matching files from the tag `release1`.
+`git selective-archive --tag release1` will create 2 files:
+`partner1_release1.tar.xz` and `partner2_release1.tar.xz` with the matching
+files from the tag `release1`.
 
 The default name for the configuration file is `.gitselectivearchive` in the
 current directory.  In most cases this should be the toplevel or the work tree
